@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transit Timetable Lookup</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        h1 {
+            color: #005a9c;
+            text-align: center;
+        }
+        #controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        select {
+            font-size: 1.2em;
+            padding: 8px 12px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            width: 50%;
+            max-width: 600px;
+        }
+        input.text-input {
+            font-size: 1.2em;
+            padding: 8px 12px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            width: 50%;
+            max-width: 600px;
+        }
+        .next-time {
+            background-color: #fff3cd;
+            color: #7a5e00;
+            font-weight: 700;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+        #timetable-display {
+            margin-top: 20px;
+        }
+        .route-group {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .route-title {
+            background-color: #005a9c;
+            color: white;
+            padding: 12px 15px;
+            font-size: 1.3em;
+            font-weight: bold;
+            border-radius: 8px 8px 0 0;
+        }
+        .direction-group {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .direction-title {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #e07a00;
+        }
+        .times-list {
+            padding-left: 20px;
+        }
+        .times-list p {
+            font-family: "Courier New", Courier, monospace;
+            line-height: 1.6;
+            word-spacing: 10px;
+            color: #555;
+        }
+        /* Autocomplete dropdown */
+        .autocomplete-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 50%;
+            max-width: 600px;
+        }
+        .suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-top: none;
+            z-index: 1000;
+            max-height: 240px;
+            overflow-y: auto;
+            border-bottom-left-radius: 5px;
+            border-bottom-right-radius: 5px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        .suggestion-item {
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+        .suggestion-item:hover {
+            background: #f0f6ff;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Transit Timetable Lookup</h1>
+    <p style="text-align:center; color:#555; margin-top:6px;">
+        This site helps you print the timetable for a specified stop.
+    </p>
+
+    <div id="controls">
+        <div style="margin-bottom: 12px;">
+            <label for="stop-input" style="font-size: 1.2em; margin-right: 10px;">STOP:</label>
+            <div class="autocomplete-wrapper">
+                <input id="stop-input" class="text-input" type="text" placeholder="Type to search stop name or code..." autocomplete="off" />
+                <div id="stop-suggestions" class="suggestions" style="display:none;"></div>
+            </div>
+        </div>
+        <div style="margin-bottom: 12px;">
+            <label for="service-selector" style="font-size: 1.2em; margin-right: 10px;">Weekday/Weekend:</label>
+            <select id="service-selector">
+                <option value="1">Week day</option>
+                <option value="2">Saturday</option>
+                <option value="3">Sunday</option>
+            </select>
+        </div>
+        <div>
+            <label for="route-selector" style="font-size: 1.2em; margin-right: 10px;">Select a Route + Headsign:</label>
+            <select id="route-selector" disabled>
+                <option value="">All routes</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="timetable-display">
+        </div>
+
+    <script>
+        // --- 1. Execute when the page is fully loaded ---
+        document.addEventListener("DOMContentLoaded", function() {
+            const stopInput = document.getElementById("stop-input");
+            const stopSuggestions = document.getElementById("stop-suggestions");
+            const routeSelector = document.getElementById("route-selector");
+            const serviceSelector = document.getElementById("service-selector");
+
+            let allStops = [];
+            let currentStopId = null;
+
+            // Step 1: Fetch the stop list (we will filter client-side)
+            fetch("http://127.0.0.1:5000/get_stops")
+                .then(response => response.json())
+                .then(stops => {
+                    allStops = Array.isArray(stops) ? stops : [];
+                })
+                .catch(error => {
+                    console.error("Failed to fetch stop list:", error);
+                });
+
+            function renderStopSuggestions(term) {
+                const q = (term || "").toLowerCase();
+                if (!q) { stopSuggestions.style.display = 'none'; stopSuggestions.innerHTML = ''; return; }
+                const matches = allStops
+                    .filter(s => (s.stop_name || '').toLowerCase().includes(q) || String(s.stop_code || '').toLowerCase().includes(q))
+                    .slice(0, 20);
+                if (!matches.length) { stopSuggestions.style.display = 'none'; stopSuggestions.innerHTML = ''; return; }
+                stopSuggestions.innerHTML = matches.map(s => {
+                    const code = s.stop_code ? `${String(s.stop_code).trim()} - ` : '';
+                    const safeName = (s.stop_name || '').replace(/\"/g, '&quot;');
+                    const label = `${code}${s.stop_name}`;
+                    const safeLabel = label.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    return `<div class=\"suggestion-item\" data-stop-id=\"${s.stop_id}\" data-stop-name=\"${safeName}\">${safeLabel}</div>`;
+                }).join('');
+                stopSuggestions.style.display = 'block';
+            }
+
+            function chooseStop(stopId, stopName) {
+                currentStopId = stopId;
+                stopInput.value = stopName || '';
+                stopSuggestions.style.display = 'none';
+                stopSuggestions.innerHTML = '';
+
+                const displayDiv = document.getElementById("timetable-display");
+                if (!currentStopId) {
+                    routeSelector.innerHTML = '<option value="">All routes</option>';
+                    routeSelector.disabled = true;
+                    displayDiv.innerHTML = "";
+                    return;
+                }
+                const sid = serviceSelector.value || '';
+                // Populate route dropdown for this stop
+                routeSelector.disabled = true;
+                routeSelector.innerHTML = '<option value="">Loading routes...</option>';
+                fetch(`http://127.0.0.1:5000/get_routes_for_stop?stop_id=${encodeURIComponent(currentStopId)}&service_id=${encodeURIComponent(sid)}`)
+                    .then(response => response.json())
+                    .then(pairs => {
+                        routeSelector.innerHTML = '<option value="">All routes</option>';
+                        pairs.forEach(pair => {
+                            const option = document.createElement("option");
+                            option.value = `${pair.route_short_name}|||${pair.trip_headsign}`;
+                            option.textContent = `${pair.route_short_name} ${pair.trip_headsign}`;
+                            routeSelector.appendChild(option);
+                        });
+                        routeSelector.disabled = false;
+                    })
+                    .catch(error => {
+                        console.error("Failed to fetch routes for stop:", error);
+                        routeSelector.innerHTML = '<option value="">All routes</option>';
+                        routeSelector.disabled = false;
+                    })
+                    .finally(() => {
+                        fetchArrivals(currentStopId, null, null, sid);
+                    });
+            }
+
+            stopInput.addEventListener('input', function() {
+                renderStopSuggestions(this.value);
+            });
+            stopInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const first = stopSuggestions.querySelector('.suggestion-item');
+                    if (first) {
+                        chooseStop(first.getAttribute('data-stop-id'), first.getAttribute('data-stop-name'));
+                    }
+                }
+            });
+            stopSuggestions.addEventListener('click', function(e) {
+                const item = e.target.closest('.suggestion-item');
+                if (!item) return;
+                chooseStop(item.getAttribute('data-stop-id'), item.getAttribute('data-stop-name'));
+            });
+            // hide suggestions on blur (delay to allow click)
+            stopInput.addEventListener('blur', function() { setTimeout(() => { stopSuggestions.style.display = 'none'; }, 150); });
+
+            // When service changes: reload routes and arrivals for current stop
+            serviceSelector.addEventListener("change", function() {
+                const selectedStopId = currentStopId;
+                const sid = this.value || '';
+                if (!selectedStopId) return;
+                // Reload route options for this stop+service
+                routeSelector.disabled = true;
+                routeSelector.innerHTML = '<option value="">Loading routes...</option>';
+                fetch(`http://127.0.0.1:5000/get_routes_for_stop?stop_id=${encodeURIComponent(selectedStopId)}&service_id=${encodeURIComponent(sid)}`)
+                    .then(response => response.json())
+                    .then(pairs => {
+                        routeSelector.innerHTML = '<option value="">All routes</option>';
+                        pairs.forEach(pair => {
+                            const option = document.createElement("option");
+                            option.value = `${pair.route_short_name}|||${pair.trip_headsign}`;
+                            option.textContent = `${pair.route_short_name} ${pair.trip_headsign}`;
+                            routeSelector.appendChild(option);
+                        });
+                        routeSelector.disabled = false;
+                    })
+                    .catch(() => {
+                        routeSelector.innerHTML = '<option value="">All routes</option>';
+                        routeSelector.disabled = false;
+                    })
+                    .finally(() => {
+                        fetchArrivals(selectedStopId, null, null, sid);
+                    });
+            });
+
+            // When route changes: refresh arrivals with filter
+            routeSelector.addEventListener("change", function() {
+                const selectedStopId = currentStopId;
+                const sid = serviceSelector.value || '';
+                if (!selectedStopId) return;
+
+                if (!this.value) {
+                    fetchArrivals(selectedStopId, null, null, sid);
+                } else {
+                    const [routeShort, headsign] = this.value.split("|||");
+                    fetchArrivals(selectedStopId, routeShort, headsign, sid);
+                }
+            });
+        });
+
+        // --- 2. Fetch arrivals for a stop (optionally filtered) and render ---
+        function fetchArrivals(stopId, routeShortName = null, tripHeadsign = null, serviceId = null) {
+            const displayDiv = document.getElementById("timetable-display");
+            displayDiv.innerHTML = "Fetching arrivals...";
+
+            const url = new URL("http://127.0.0.1:5000/get_arrivals");
+            url.searchParams.set("stop_id", stopId);
+            if (routeShortName) url.searchParams.set("route_short_name", routeShortName);
+            if (tripHeadsign) url.searchParams.set("trip_headsign", tripHeadsign);
+            if (serviceId) url.searchParams.set("service_id", serviceId);
+
+            fetch(url.toString())
+                .then(response => response.json())
+                .then(data => {
+                    // If a specific route is selected, API returns flat list
+                    if (Array.isArray(data.times)) {
+                        renderRouteTimes(displayDiv, {
+                            routeLabel: document.getElementById("route-selector").selectedOptions[0]?.textContent || 'Selected route',
+                            times: data.times
+                        });
+                        return;
+                    }
+
+                    // Otherwise grouped view
+                    const groups = Array.isArray(data.groups) ? data.groups : [];
+                    displayDiv.innerHTML = "";
+                    groups.forEach(group => {
+                        const label = `${group.route_short_name} ${group.trip_headsign}`.trim();
+                        renderRouteTimes(displayDiv, { routeLabel: label, times: group.times });
+                    });
+                    if (!groups.length) {
+                        displayDiv.innerHTML = '<div class="route-group"><div class="direction-group"><div class="times-list"><p>No trips found.</p></div></div></div>';
+                    }
+                })
+                .catch(error => {
+                    console.error("Failed to fetch arrivals:", error);
+                    displayDiv.innerHTML = "Error fetching arrivals.";
+                });
+        }
+
+        function renderRouteTimes(container, { routeLabel, times }) {
+            const timesArr = Array.isArray(times) ? times : [];
+            const count = timesArr.length;
+            const first = timesArr[0] || '';
+            const last = timesArr[count - 1] || '';
+
+            // compute next time index relative to now
+            const nowIdx = findNextTimeIndex(timesArr);
+
+            // Build times view (8 per line) and highlight next
+            let timesHtml = "";
+            for (let i = 0; i < timesArr.length; i += 8) {
+                const chunk = timesArr.slice(i, i + 8);
+                const chunkHtml = chunk.map((t, idx) => {
+                    const absoluteIdx = i + idx;
+                    return absoluteIdx === nowIdx ? `<span class="next-time">${t}</span>` : t;
+                }).join(" | ");
+                timesHtml += `<p>${chunkHtml}</p>`;
+            }
+
+            const routeDiv = document.createElement("div");
+            routeDiv.className = "route-group";
+            routeDiv.innerHTML = `
+                <div class="route-title">${routeLabel}</div>
+                <div class="direction-group">
+                    <div class="direction-title">${count} trips from ${first || 'N/A'} to ${last || 'N/A'}</div>
+                    <div class="times-list">${timesHtml || '<p>No times found.</p>'}</div>
+                </div>
+            `;
+            container.appendChild(routeDiv);
+        }
+
+        function findNextTimeIndex(times) {
+            if (!Array.isArray(times) || times.length === 0) return -1;
+            const now = new Date();
+            const nowSeconds = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+            const toSeconds = (t) => {
+                const parts = (t || '').split(':').map(Number);
+                if (parts.length < 2) return NaN;
+                const h = parts[0] || 0, m = parts[1] || 0, s = parts[2] || 0;
+                return h*3600 + m*60 + s;
+            };
+            let bestIdx = -1;
+            for (let i = 0; i < times.length; i++) {
+                const sec = toSeconds(times[i]);
+                if (!isNaN(sec) && sec >= nowSeconds) { bestIdx = i; break; }
+            }
+            // If no future time, fall back to first of the list
+            if (bestIdx === -1) bestIdx = 0;
+            return bestIdx;
+        }
+    </script>
+
+</body>
+</html>

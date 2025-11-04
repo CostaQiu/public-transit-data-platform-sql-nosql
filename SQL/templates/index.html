@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GTA Public Transit Analytics</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <div class="container py-4">
+      <h1 class="mb-3">GTA Public Transit Analytics</h1>
+
+      <ul class="nav nav-tabs" id="tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" id="q1-tab" data-bs-toggle="tab" data-bs-target="#q1" type="button" role="tab">Q1 Busiest Stops</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="q2-tab" data-bs-toggle="tab" data-bs-target="#q2" type="button" role="tab">Q2 Trip Duration & Speed</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="q3-tab" data-bs-toggle="tab" data-bs-target="#q3" type="button" role="tab">Q3 Transfer Points</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="q4-tab" data-bs-toggle="tab" data-bs-target="#q4" type="button" role="tab">Q4 Service Frequency</button>
+        </li>
+      </ul>
+
+      <div class="tab-content pt-3">
+        <div class="tab-pane fade show active" id="q1" role="tabpanel" aria-labelledby="q1-tab">
+          <p class="lead fw-bold fs-5">Q1 — Busiest stops: stops with the highest trip event counts are considered busiest. Dots are colored from green (lower) to red (higher).</p>
+          <form class="row gy-2 gx-3 align-items-center" id="form-q1">
+            <div class="col-auto">
+              <label class="form-label">Weekday/Weekend</label>
+              <select class="form-select" name="service_id">
+                <option value="1">Weekday</option>
+                <option value="2">Saturday</option>
+                <option value="3">Sunday</option>
+                <option value="4" selected>Whole week</option>
+              </select>
+            </div>
+            <div class="col-auto">
+              <label class="form-label">Limit</label>
+              <select class="form-select" name="limit">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div class="col-auto">
+              <button class="btn btn-primary mt-4" type="submit">Apply</button>
+            </div>
+          </form>
+          <div id="map-q1" class="map mt-3"></div>
+          <div class="table-responsive mt-3">
+            <table class="table table-sm table-striped" id="table-q1">
+              <thead>
+                <tr>
+                  <th>Stop</th><th>Stop Code</th><th>Total Trip Events</th><th>Unique Routes</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="q2" role="tabpanel" aria-labelledby="q2-tab">
+          <p class="lead fw-bold fs-5">Q2 — Route duration and speed: ranks routes by highest average duration (minutes); their average speed (km/h) is also reported.</p>
+          <form class="row gy-2 gx-3 align-items-center" id="form-q2">
+            <div class="col-auto">
+              <label class="form-label">Weekday/Weekend</label>
+              <select class="form-select" name="service_id">
+                <option value="1">Weekday</option>
+                <option value="2">Saturday</option>
+                <option value="3">Sunday</option>
+                <option value="4" selected>Whole week</option>
+              </select>
+            </div>
+            <div class="col-auto">
+              <label class="form-label">Limit</label>
+              <select class="form-select" name="limit">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div class="col-auto">
+              <button class="btn btn-primary mt-4" type="submit">Apply</button>
+            </div>
+          </form>
+          <div id="q2-overall" class="my-3"></div>
+          <div id="q2-charts" class="small-multiples"></div>
+          <div class="table-responsive mt-3">
+            <table class="table table-sm table-striped" id="table-q2">
+              <thead>
+                <tr>
+                  <th>Route No. and Name</th><th>Weekday/Weekend</th><th class="sortable" data-key="trips">Trips</th><th class="sortable" data-key="duration">Avg Duration (min)</th><th class="sortable" data-key="speed">Avg Speed (km/h)</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="q3" role="tabpanel" aria-labelledby="q3-tab">
+          <p class="lead fw-bold fs-5">Q3 — Transfer points: stops served by two or more unique routes are considered transfer points; we show those with the highest unique route counts.</p>
+          <form class="row gy-2 gx-3 align-items-center" id="form-q3">
+            <div class="col-auto">
+              <label class="form-label">Weekday/Weekend</label>
+              <select class="form-select" name="service_id">
+                <option value="1">Weekday</option>
+                <option value="2">Saturday</option>
+                <option value="3">Sunday</option>
+                <option value="4" selected>Whole week</option>
+              </select>
+            </div>
+            <div class="col-auto">
+              <label class="form-label">Limit</label>
+              <select class="form-select" name="limit">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div class="col-auto">
+              <button class="btn btn-primary mt-4" type="submit">Apply</button>
+            </div>
+          </form>
+          <div id="map-q3" class="map mt-3"></div>
+          <div class="table-responsive mt-3">
+            <table class="table table-sm table-striped" id="table-q3">
+              <thead>
+                <tr>
+                  <th>Stop</th><th>Stop Code</th><th>Unique Routes</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="q4" role="tabpanel" aria-labelledby="q4-tab">
+          <p class="lead fw-bold fs-5">Q4 — Service frequency: total trips for a route measure its frequency; hourly bars represent new trips starting within each hour.</p>
+          <form class="row gy-2 gx-3 align-items-center" id="form-q4">
+            <div class="col-auto">
+              <label class="form-label">Weekday/Weekend</label>
+              <select class="form-select" name="service_id">
+                <option value="1">Weekday</option>
+                <option value="2">Saturday</option>
+                <option value="3">Sunday</option>
+                <option value="4" selected>Whole week</option>
+              </select>
+            </div>
+            <div class="col-auto">
+              <label class="form-label">Limit</label>
+              <select class="form-select" name="limit">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div class="col-auto">
+              <button class="btn btn-primary mt-4" type="submit">Apply</button>
+            </div>
+          </form>
+          <div id="q4-charts" class="small-multiples"></div>
+          <div class="table-responsive mt-3">
+            <table class="table table-sm table-striped" id="table-q4">
+              <thead>
+                <tr>
+                  <th>Route name and number of trips</th><th>Weekday</th><th>Saturday</th><th>Sunday</th><th>Average</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+  </html>
+
+

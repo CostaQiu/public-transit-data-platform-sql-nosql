@@ -1,0 +1,21 @@
+﻿# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Local planning docs (locked by Office)
+Project planning/
+
+dataset/dataset.xlsx
+
+
+# Ignore entire raw dataset (large)
+dataset/**
+
