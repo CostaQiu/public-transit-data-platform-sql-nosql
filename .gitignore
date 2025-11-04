@@ -19,3 +19,12 @@ dataset/dataset.xlsx
 # Ignore entire raw dataset (large)
 dataset/**
 
+
+# Ignore raw GTFS text, but allow a compressed archive
+# (repo keeps dataset.zip < 100MB only)
+dataset/**
+!dataset/dataset.zip
+
+# Do not track generated analytics CSVs
+SQL/data/**
+
